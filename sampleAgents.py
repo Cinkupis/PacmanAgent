@@ -1,31 +1,3 @@
-# sampleAgents.py
-# parsons/07-oct-2017
-#
-# Version 1.1
-#
-# Some simple agents to work with the PacMan AI projects from:
-#
-# http://ai.berkeley.edu/
-#
-# These use a simple API that allow us to control Pacman's interaction with
-# the environment adding a layer on top of the AI Berkeley code.
-#
-# As required by the licensing agreement for the PacMan AI we have:
-#
-# Licensing Information:  You are free to use or extend these projects for
-# educational purposes provided that (1) you do not distribute or publish
-# solutions, (2) you retain this notice, and (3) you provide clear
-# attribution to UC Berkeley, including a link to http://ai.berkeley.edu.
-# 
-# Attribution Information: The Pacman AI projects were developed at UC Berkeley.
-# The core projects and autograders were primarily created by John DeNero
-# (denero@cs.berkeley.edu) and Dan Klein (klein@cs.berkeley.edu).
-# Student side autograding was added by Brad Miller, Nick Hay, and
-# Pieter Abbeel (pabbeel@cs.berkeley.edu).
-
-# The agents here are extensions written by Simon Parsons, based on the code in
-# pacmanAgents.py
-
 from pacman import Directions
 from game import Agent
 import api
@@ -35,18 +7,21 @@ import util
 class HungrySurvivalCornerSeekingAgent(Agent):
 
     def __init__(self):
-        self.lastMove = Directions.STOP
+        self.lastDirection = Directions.STOP
+        self.lastSpot = (0, 0)
         self.visitedCorners = []
         self.position = (0, 0)
         self.scared = True
         self.walls = []
-        self.legalMoves = []
-        self.offsetMapping = {
+        self.legalDirections = []
+        self.offsetDirectionalMapping = {
             Directions.WEST: (-1, 0),
             Directions.NORTH: (0, 1),
             Directions.EAST: (1, 0),
             Directions.SOUTH: (0, -1)
         }
+
+        self.pathTraversal = []
 
     def sortCoordsByDistance(self, coordList, distList):
         gap = len(distList) / 2
@@ -63,16 +38,45 @@ class HungrySurvivalCornerSeekingAgent(Agent):
                 distList[j] = tempDist
             gap = gap / 2
 
-    def distanceWithWalls(self, tupleA, tupleB):
+    def getDistanceWithWalls(self, tupleA, tupleB):
         return util.manhattanDistance(tupleA, tupleB)
+        # return max(self.pathFinder(tupleA, tupleB), util.manhattanDistance(tupleA, tupleB))
+        # return max(self.pathFinder(tupleA, tupleB), self.pathFinder(tupleB, tupleA))
 
-    def pathFinder(self, tupleA, tupleB, distance):
-        return -1
+    # Recursion limit
+    def pathFinder(self, tupleA, tupleB):
+        if tupleA == tupleB:
+            return len(self.pathTraversal)
+        for direction in self.offsetDirectionalMapping:
+            possibleSpot = tuple(map(sum, zip(self.offsetDirectionalMapping[direction], tupleA)))
+            if possibleSpot not in self.walls and possibleSpot not in self.pathTraversal:
+                self.pathTraversal.append(possibleSpot)
+                return min(self.pathFinder(possibleSpot, tupleB), self.pathFinder(tupleB, possibleSpot))
+
+        # What to do in case of dead end?
+        # How to classify a dead end and filter it out during recursion?
+
+        # if len(self.pathTraversal) < util.manhattanDistance(tupleA, tupleB):
+        #     return util.manhattanDistance(tupleA, tupleB)**2
+        # else:
+        #     return len(self.pathTraversal)
+
+    def getValidDirections(self, goalCoord):
+        validDirections = []
+        if goalCoord[0] < self.position[0] and Directions.WEST in self.legalDirections:
+            validDirections.append(Directions.WEST)
+        if goalCoord[0] > self.position[0] and Directions.EAST in self.legalDirections:
+            validDirections.append(Directions.EAST)
+        if goalCoord[1] < self.position[1] and Directions.SOUTH in self.legalDirections:
+            validDirections.append(Directions.SOUTH)
+        if goalCoord[1] > self.position[1] and Directions.NORTH in self.legalDirections:
+            validDirections.append(Directions.NORTH)
+        return validDirections
 
     def getAction(self, state):
-        self.legalMoves = api.legalActions(state)
-        if Directions.STOP in self.legalMoves:
-            self.legalMoves.remove(Directions.STOP)
+        self.legalDirections = api.legalActions(state)
+        if Directions.STOP in self.legalDirections:
+            self.legalDirections.remove(Directions.STOP)
 
         self.position = api.whereAmI(state)
         self.walls = api.walls(state)
@@ -84,22 +88,31 @@ class HungrySurvivalCornerSeekingAgent(Agent):
         foodDistances = []
 
         cornersToVisit = api.corners(state)
+        cornerDistances = []
+
+        if self.position in cornersToVisit and self.position not in self.visitedCorners:
+            self.visitedCorners.append(self.position)
+
         for corner in self.visitedCorners:
             cornersToVisit.remove(corner)
 
         for ghost in ghostLocations:
-            ghostDistances.append(self.distanceWithWalls(self.position, ghost))
+            ghostDistances.append(self.getDistanceWithWalls(self.position, ghost))
 
         for capsule in capsuleLocations:
             foodLocations.append(capsule)
 
         for location in foodLocations:
-            foodDistances.append(self.distanceWithWalls(location, self.position))
+            foodDistances.append(self.getDistanceWithWalls(self.position, location))
+
+        for corner in cornersToVisit:
+            cornerDistances.append(self.getDistanceWithWalls(self.position, corner))
 
         self.sortCoordsByDistance(foodLocations, foodDistances)
+        self.sortCoordsByDistance(cornersToVisit, cornerDistances)
 
         if len(ghostLocations) > 0:
-            bestMove = random.choice(self.legalMoves)
+            bestDirection = random.choice(self.legalDirections)
             if len(ghostLocations) > 1:
                 closestGhost = ghostLocations[0] if ghostDistances[0] < ghostDistances[1] else ghostLocations[1]
             else:
@@ -111,38 +124,42 @@ class HungrySurvivalCornerSeekingAgent(Agent):
                     break
                 else:
                     self.scared = True
-            for move in self.legalMoves:
-                nextSpot = tuple(map(sum, zip(self.offsetMapping[move], self.position)))
-                distanceToGhost = self.distanceWithWalls(closestGhost, nextSpot)
-                currentDistanceToGhost = self.distanceWithWalls(closestGhost, self.position)
+            for direction in self.legalDirections:
+                nextSpot = tuple(map(sum, zip(self.offsetDirectionalMapping[direction], self.position)))
+                distanceToGhost = self.getDistanceWithWalls(nextSpot, closestGhost)
+                currentDistanceToGhost = self.getDistanceWithWalls(self.position, closestGhost)
                 if distanceToGhost > currentDistanceToGhost and self.scared:
-                    bestMove = move
+                    bestDirection = direction
                 if distanceToGhost < currentDistanceToGhost and not self.scared:
-                    bestMove = move
-            return api.makeMove(bestMove, self.legalMoves)
+                    bestDirection = direction
+            self.lastSpot = self.position
+            return api.makeMove(bestDirection, self.legalDirections)
+
         elif len(foodLocations) > 0:
             closestFood = foodLocations[0]
-            closestFoodDistance = self.distanceWithWalls(self.position, closestFood)
-            if len(foodLocations) > 2 and (closestFoodDistance == self.distanceWithWalls(self.position, foodLocations[1])):
+            closestFoodDistance = self.getDistanceWithWalls(self.position, closestFood)
+            if len(foodLocations) > 2 and (closestFoodDistance == self.getDistanceWithWalls(self.position, foodLocations[1])):
                 closestFood = foodLocations[random.randint(0, 1)]
-            if len(capsuleLocations) > 0 and (closestFoodDistance == self.distanceWithWalls(self.position, capsuleLocations[0])):
+            if len(capsuleLocations) > 0 and (closestFoodDistance == self.getDistanceWithWalls(self.position, capsuleLocations[0])):
                 closestFood = capsuleLocations[0]
-            validMoves = []
-            if closestFood[0] < self.position[0] and Directions.WEST in self.legalMoves:
-                validMoves.append(Directions.WEST)
-            if closestFood[0] > self.position[0] and Directions.EAST in self.legalMoves:
-                validMoves.append(Directions.EAST)
-            if closestFood[1] < self.position[1] and Directions.SOUTH in self.legalMoves:
-                validMoves.append(Directions.SOUTH)
-            if closestFood[1] > self.position[1] and Directions.NORTH in self.legalMoves:
-                validMoves.append(Directions.NORTH)
-            if len(validMoves) == 0 and not self.lastMove == Directions.STOP and self.lastMove in self.legalMoves:
-                return api.makeMove(self.lastMove, self.legalMoves)
-            self.lastMove = random.choice(validMoves if len(validMoves) > 0 else self.legalMoves)
+            validDirections = self.getValidDirections(closestFood)
+            if len(validDirections) == 0 and not self.lastDirection == Directions.STOP and self.lastDirection in self.legalDirections:
+                return api.makeMove(self.lastDirection, self.legalDirections)
+            self.lastDirection = random.choice(validDirections if len(validDirections) > 0 else self.legalDirections)
+
         elif len(cornersToVisit) > 0:
             nextCorner = cornersToVisit[0]
-        self.lastMove = self.lastMove if self.lastMove in self.legalMoves else random.choice(self.legalMoves)
-        return api.makeMove(self.lastMove, self.legalMoves)
+            validDirections = self.getValidDirections(nextCorner)
+            if len(validDirections) == 0 and not self.lastDirection == Directions.STOP and self.lastDirection in self.legalDirections:
+                return api.makeMove(self.lastDirection, self.legalDirections)
+            self.lastDirection = random.choice(validDirections if len(validDirections) > 0 else self.legalDirections)
+
+        self.lastDirection = self.lastDirection if self.lastDirection in self.legalDirections else random.choice(self.legalDirections)
+        if len(self.legalDirections) > 1 and tuple(map(sum, zip(self.offsetDirectionalMapping[self.lastDirection], self.position))) == self.lastSpot:
+            self.legalDirections.remove(self.lastDirection)
+            self.lastDirection = random.choice(self.legalDirections)
+        self.lastSpot = self.position
+        return api.makeMove(self.lastDirection, self.legalDirections)
 
 
 class SurvivalAgent(Agent):
@@ -243,57 +260,9 @@ class LeftTurnAgent(Agent):
         if Directions.LEFT[left] in legal: return Directions.LEFT[left]
         return Directions.STOP
 
-# RandomAgent
-#
-# A very simple agent. Just makes a random pick every time that it is
-# asked for an action.
-class RandomAgent(Agent):
-
-    def getAction(self, state):
-        # Get the actions we can try, and remove "STOP" if that is one of them.
-        legal = api.legalActions(state)
-        if Directions.STOP in legal:
-            legal.remove(Directions.STOP)
-        # Random choice between the legal options.
-        return api.makeMove(random.choice(legal), legal)
-
-# RandomishAgent
-#
-# A tiny bit more sophisticated. Having picked a direction, keep going
-# until that direction is no longer possible. Then make a random
-# choice.
-class RandomishAgent(Agent):
-
-    # Constructor
-    #
-    # Create a variable to hold the last action
-    def __init__(self):
-         self.last = Directions.STOP
-    
-    def getAction(self, state):
-        # Get the actions we can try, and remove "STOP" if that is one of them.
-        legal = api.legalActions(state)
-        if Directions.STOP in legal:
-            legal.remove(Directions.STOP)
-        # If we can repeat the last action, do it. Otherwise make a
-        # random choice.
-        if self.last in legal:
-            return api.makeMove(self.last, legal)
-        else:
-            pick = random.choice(legal)
-            # Since we changed action, record what we did
-            self.last = pick
-            return api.makeMove(pick, legal)
-
-# SensingAgent
-#
-# Doesn't move, but reports sensory data available to Pacman
 class SensingAgent(Agent):
 
     def getAction(self, state):
-
-        # Demonstrates the information that Pacman can access about the state
-        # of the game.
 
         # What are the current moves available
         legal = api.legalActions(state)
