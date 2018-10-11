@@ -15,10 +15,10 @@ This repository contains the coursework for Artificial Intelligence course. For 
 
   - Requires Python 2.7 installed on your system
   - To run selected agent, type into the console:
-    - ```sh 
-        python pacman.py --pacman <Selected Agents class name>
-        ```
+    ```sh 
+     python pacman.py --pacman <Selected Agents class name>
+    ```
   - For a different maze layout:
-    - ```sh 
-        python pacman.py --pacman <Selected Agents class name> --layout smallClassic
-        ```
+    ```sh 
+    python pacman.py --pacman <Selected Agents class name> --layout smallClassic
+    ```
