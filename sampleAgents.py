@@ -3,25 +3,79 @@ from game import Agent
 import api
 import random
 import util
+import math
 
-class HungrySurvivalCornerSeekingAgent(Agent):
+class PartialAgent(Agent):
+
+    SCARED = 'SCARED'
+    HUNGRY = 'HUNGRY'
+    SEARCH = 'SEARCH'
 
     def __init__(self):
+        self.visitedWaypoints = []
+        self.doOnce = True
         self.lastDirection = Directions.STOP
-        self.lastSpot = (0, 0)
-        self.visitedCorners = []
-        self.position = (0, 0)
-        self.scared = True
+        self.lastBadDirection = Directions.STOP
+        self.lastSpot = None
+        self.position = None
         self.walls = []
         self.legalDirections = []
+        self.knownGhosts = []
+        self.knownWaypoints = []
+        self.knownFood = []
+        self.knownCapsules = []
         self.offsetDirectionalMapping = {
             Directions.WEST: (-1, 0),
             Directions.NORTH: (0, 1),
             Directions.EAST: (1, 0),
             Directions.SOUTH: (0, -1)
         }
+        self.oppositeOf = {
+            Directions.WEST: Directions.EAST,
+            Directions.NORTH: Directions.SOUTH,
+            Directions.EAST: Directions.WEST,
+            Directions.SOUTH: Directions.NORTH
+        }
 
-        self.pathTraversal = []
+    def renewInformation(self, state):
+        self.position = api.whereAmI(state)
+
+        self.legalDirections = api.legalActions(state)
+        if Directions.STOP in self.legalDirections:
+            self.legalDirections.remove(Directions.STOP)
+
+        self.knownGhosts = api.ghosts(state)
+        self.knownFood = api.food(state)
+        self.knownCapsules = api.capsules(state)
+
+        for waypoint in self.knownWaypoints:
+            if self.getManhattanDist(self.position, waypoint) == 0 and waypoint not in self.visitedWaypoints:
+                self.visitedWaypoints.append(waypoint)
+                self.knownWaypoints.remove(waypoint)
+
+        foodDistances = []
+        for food in self.knownFood:
+            foodDistances.append(self.getManhattanDist(self.position, food))
+        self.sortCoordsByDistance(self.knownFood, foodDistances)
+
+    def instantiateNormalizeOnce(self, state):
+        self.position = api.whereAmI(state)
+        self.walls = api.walls(state)
+        self.legalDirections = api.legalActions(state)
+        self.knownGhosts = api.ghosts(state)
+        self.knownWaypoints = api.corners(state)
+        self.knownFood = api.food(state)
+        self.knownCapsules = api.capsules(state)
+        for i in range(len(self.knownWaypoints)):
+            if self.knownWaypoints[i][0] == 0:
+                self.knownWaypoints[i] = (self.knownWaypoints[i][0] + 1, self.knownWaypoints[i][1])
+            else:
+                self.knownWaypoints[i] = (self.knownWaypoints[i][0] - 1, self.knownWaypoints[i][1])
+            if self.knownWaypoints[i][1] == 0:
+                self.knownWaypoints[i] = (self.knownWaypoints[i][0], self.knownWaypoints[i][1] + 1)
+            else:
+                self.knownWaypoints[i] = (self.knownWaypoints[i][0], self.knownWaypoints[i][1] - 1)
+        self.doOnce = False
 
     def sortCoordsByDistance(self, coordList, distList):
         gap = len(distList) / 2
@@ -38,129 +92,157 @@ class HungrySurvivalCornerSeekingAgent(Agent):
                 distList[j] = tempDist
             gap = gap / 2
 
-    def getDistanceWithWalls(self, tupleA, tupleB):
-        return util.manhattanDistance(tupleA, tupleB)
-        # return max(self.pathFinder(tupleA, tupleB), util.manhattanDistance(tupleA, tupleB))
-        # return max(self.pathFinder(tupleA, tupleB), self.pathFinder(tupleB, tupleA))
+    def getManhattanDist(self, objectA, objectB):
+        return util.manhattanDistance(objectA, objectB)
 
-    # Recursion limit
-    def pathFinder(self, tupleA, tupleB):
-        if tupleA == tupleB:
-            return len(self.pathTraversal)
-        for direction in self.offsetDirectionalMapping:
-            possibleSpot = tuple(map(sum, zip(self.offsetDirectionalMapping[direction], tupleA)))
-            if possibleSpot not in self.walls and possibleSpot not in self.pathTraversal:
-                self.pathTraversal.append(possibleSpot)
-                return min(self.pathFinder(possibleSpot, tupleB), self.pathFinder(tupleB, possibleSpot))
+    def getDiagonalDist(self, objectA, objectB):
+        return math.sqrt((objectA[0] - objectB[0]) ** 2 + (objectA[1] - objectB[1]) ** 2)
 
-        # What to do in case of dead end?
-        # How to classify a dead end and filter it out during recursion?
+    def wallInBetweenPacman(self, object):
+        if self.getManhattanDist(object, self.position) == 2:
+            spotDifference = (object[0] - self.position[0], object[1] - self.position[1])
+            if spotDifference[0] == 0 or spotDifference[1] == 0:
+                spotInBetween = tuple(map(sum, zip(self.position, spotDifference)))
+                if spotInBetween in self.walls:
+                    return True
+        return False
 
-        # if len(self.pathTraversal) < util.manhattanDistance(tupleA, tupleB):
-        #     return util.manhattanDistance(tupleA, tupleB)**2
-        # else:
-        #     return len(self.pathTraversal)
+    def filterGreedyDirections(self, greedyDirections):
+        if len(greedyDirections) > 0:
+            for direction in greedyDirections:
+                if direction not in self.legalDirections:
+                    greedyDirections.remove(direction)
+        return greedyDirections
 
-    def getValidDirections(self, goalCoord):
-        validDirections = []
-        if goalCoord[0] < self.position[0] and Directions.WEST in self.legalDirections:
-            validDirections.append(Directions.WEST)
-        if goalCoord[0] > self.position[0] and Directions.EAST in self.legalDirections:
-            validDirections.append(Directions.EAST)
-        if goalCoord[1] < self.position[1] and Directions.SOUTH in self.legalDirections:
-            validDirections.append(Directions.SOUTH)
-        if goalCoord[1] > self.position[1] and Directions.NORTH in self.legalDirections:
-            validDirections.append(Directions.NORTH)
-        return validDirections
+    def getGreedyDirections(self, goalCoord, fromCoord):
+        greedyDirections = []
+        if goalCoord[0] < fromCoord[0] and Directions.WEST in self.legalDirections:
+            greedyDirections.append(Directions.WEST)
+        if goalCoord[0] > fromCoord[0] and Directions.EAST in self.legalDirections:
+            greedyDirections.append(Directions.EAST)
+        if goalCoord[1] < fromCoord[1] and Directions.SOUTH in self.legalDirections:
+            greedyDirections.append(Directions.SOUTH)
+        if goalCoord[1] > fromCoord[1] and Directions.NORTH in self.legalDirections:
+            greedyDirections.append(Directions.NORTH)
+        return greedyDirections
 
-    def getAction(self, state):
-        self.legalDirections = api.legalActions(state)
-        if Directions.STOP in self.legalDirections:
-            self.legalDirections.remove(Directions.STOP)
-
-        self.position = api.whereAmI(state)
-        self.walls = api.walls(state)
-        ghostLocations = api.ghostsDistanceLimited(state)
-        ghostDistances = []
-
-        foodLocations = api.foodDistanceLimited(state)
-        capsuleLocations = api.capsulesDistanceLimited(state)
-        foodDistances = []
-
-        cornersToVisit = api.corners(state)
-        cornerDistances = []
-
-        if self.position in cornersToVisit and self.position not in self.visitedCorners:
-            self.visitedCorners.append(self.position)
-
-        for corner in self.visitedCorners:
-            cornersToVisit.remove(corner)
-
-        for ghost in ghostLocations:
-            ghostDistances.append(self.getDistanceWithWalls(self.position, ghost))
-
-        for capsule in capsuleLocations:
-            foodLocations.append(capsule)
-
-        for location in foodLocations:
-            foodDistances.append(self.getDistanceWithWalls(self.position, location))
-
-        for corner in cornersToVisit:
-            cornerDistances.append(self.getDistanceWithWalls(self.position, corner))
-
-        self.sortCoordsByDistance(foodLocations, foodDistances)
-        self.sortCoordsByDistance(cornersToVisit, cornerDistances)
-
-        if len(ghostLocations) > 0:
-            bestDirection = random.choice(self.legalDirections)
-            if len(ghostLocations) > 1:
-                closestGhost = ghostLocations[0] if ghostDistances[0] < ghostDistances[1] else ghostLocations[1]
+    def evaluateScaryConditions(self):
+        conditions = []
+        if len(self.knownGhosts) > 0:
+            ghostDistances = []
+            for ghost in self.knownGhosts:
+                ghostDistances.append(self.getManhattanDist(self.position, ghost))
+            if len(self.knownGhosts) > 1:
+                closestGhost = self.knownGhosts[0] if ghostDistances[0] < ghostDistances[1] else self.knownGhosts[1]
             else:
-                closestGhost = ghostLocations[0]
-            ghostStates = state.getGhostStates()
-            for i in range(len(ghostStates)):
-                if ghostStates[i].getPosition() == closestGhost and ghostStates[i].scaredTimer > 0:
-                    self.scared = False
+                closestGhost = self.knownGhosts[0]
+            if not self.wallInBetweenPacman(closestGhost):
+                conditions.append(self.SCARED)
+                conditions.append(closestGhost)
+                if len(self.knownFood) > 0:
+                    conditions.append(self.knownFood[-1])
+        return conditions
+
+    def evaluateHungryConditions(self):
+        conditions = []
+        if len(self.knownFood) > 0:
+            for i in range(len(self.knownFood)):
+                if not self.wallInBetweenPacman(self.knownFood[0]):
+                    conditions.append(self.HUNGRY)
+                    conditions.append(self.knownFood[i])
+                    if len(self.knownFood) > 1:
+                        conditions.append(self.knownFood[-1])
                     break
-                else:
-                    self.scared = True
+        return conditions
+
+    def evaluateSearchConditions(self):
+        conditions = []
+        waypointDistances = []
+        if len(self.knownWaypoints) > 0:
+            for waypoint in self.knownWaypoints:
+                waypointDistances.append(self.getManhattanDist(self.position, waypoint))
+            self.sortCoordsByDistance(self.knownWaypoints, waypointDistances)
+            conditions.append(self.SEARCH)
+            conditions.append(self.knownWaypoints[0])
+        return conditions
+
+    def runAway(self, runFrom):
+        previousDistance = 0
+        bestDirection = Directions.STOP
+        for direction in self.legalDirections:
+            nextSpot = tuple(map(sum, zip(self.offsetDirectionalMapping[direction], self.position)))
+            nextSpotDistanceToGhost = self.getDiagonalDist(nextSpot, runFrom)
+            currentDistanceToGhost = self.getManhattanDist(self.position, runFrom)
+            if nextSpotDistanceToGhost >= currentDistanceToGhost and nextSpotDistanceToGhost >= previousDistance:
+                bestDirection = direction
+                previousDistance = nextSpotDistanceToGhost
+        self.lastSpot = self.position
+        self.lastDirection = bestDirection
+        return bestDirection
+
+    def runTowards(self, runTo):
+        bestDirection = Directions.STOP
+        greedyDirections = self.filterGreedyDirections(self.getGreedyDirections(runTo, self.position))
+        previousDistance = self.getManhattanDist(self.position, runTo)
+        if len(greedyDirections) == 0:
             for direction in self.legalDirections:
                 nextSpot = tuple(map(sum, zip(self.offsetDirectionalMapping[direction], self.position)))
-                distanceToGhost = self.getDistanceWithWalls(nextSpot, closestGhost)
-                currentDistanceToGhost = self.getDistanceWithWalls(self.position, closestGhost)
-                if distanceToGhost > currentDistanceToGhost and self.scared:
+                nextSpotDistanceToObject = self.getDiagonalDist(nextSpot, runTo)
+                currentDistanceToObject = self.getManhattanDist(self.position, runTo)
+                if nextSpotDistanceToObject <= currentDistanceToObject and nextSpotDistanceToObject <= previousDistance:
                     bestDirection = direction
-                if distanceToGhost < currentDistanceToGhost and not self.scared:
+                    previousDistance = nextSpotDistanceToObject
+        else:
+            for direction in greedyDirections:
+                nextSpot = tuple(map(sum, zip(self.offsetDirectionalMapping[direction], self.position)))
+                nextSpotDistanceToObject = self.getDiagonalDist(nextSpot, runTo)
+                currentDistanceToObject = self.getManhattanDist(self.position, runTo)
+                if nextSpotDistanceToObject <= currentDistanceToObject and nextSpotDistanceToObject <= previousDistance:
                     bestDirection = direction
-            self.lastSpot = self.position
+                    previousDistance = nextSpotDistanceToObject
+
+        if self.lastDirection != Directions.STOP and bestDirection == self.oppositeOf[self.lastDirection]:
+            if len(self.legalDirections) > 1:
+                self.legalDirections.remove(self.oppositeOf[self.lastDirection])
+            bestDirection = random.choice(self.legalDirections)
+        elif bestDirection == Directions.STOP:
+            bestDirection = self.lastDirection if self.lastDirection in self.legalDirections else random.choice(self.legalDirections)
+        self.lastDirection = bestDirection
+        self.lastSpot = self.position
+        return bestDirection
+
+    def getAction(self, state):
+        if self.doOnce:
+            self.instantiateNormalizeOnce(state)
+
+        self.renewInformation(state)
+
+        environmentConditions = self.evaluateScaryConditions()
+        if len(environmentConditions) > 0:
+            bestDirection = self.runAway(environmentConditions[1])
+            if len(environmentConditions) == 3:
+                if environmentConditions[2] not in self.knownWaypoints:
+                    self.knownWaypoints.append(environmentConditions[2])
             return api.makeMove(bestDirection, self.legalDirections)
 
-        elif len(foodLocations) > 0:
-            closestFood = foodLocations[0]
-            closestFoodDistance = self.getDistanceWithWalls(self.position, closestFood)
-            if len(foodLocations) > 2 and (closestFoodDistance == self.getDistanceWithWalls(self.position, foodLocations[1])):
-                closestFood = foodLocations[random.randint(0, 1)]
-            if len(capsuleLocations) > 0 and (closestFoodDistance == self.getDistanceWithWalls(self.position, capsuleLocations[0])):
-                closestFood = capsuleLocations[0]
-            validDirections = self.getValidDirections(closestFood)
-            if len(validDirections) == 0 and not self.lastDirection == Directions.STOP and self.lastDirection in self.legalDirections:
-                return api.makeMove(self.lastDirection, self.legalDirections)
-            self.lastDirection = random.choice(validDirections if len(validDirections) > 0 else self.legalDirections)
+        environmentConditions = self.evaluateHungryConditions()
+        if len(environmentConditions) > 0:
+            bestDirection = self.runTowards(environmentConditions[1])
+            if environmentConditions[1] not in self.knownWaypoints:
+                self.knownWaypoints.append(environmentConditions[1])
+            if len(environmentConditions) == 3:
+                if environmentConditions[2] not in self.knownWaypoints:
+                    self.knownWaypoints.append(environmentConditions[2])
+            return api.makeMove(bestDirection, self.legalDirections)
 
-        elif len(cornersToVisit) > 0:
-            nextCorner = cornersToVisit[0]
-            validDirections = self.getValidDirections(nextCorner)
-            if len(validDirections) == 0 and not self.lastDirection == Directions.STOP and self.lastDirection in self.legalDirections:
-                return api.makeMove(self.lastDirection, self.legalDirections)
-            self.lastDirection = random.choice(validDirections if len(validDirections) > 0 else self.legalDirections)
+        environmentConditions = self.evaluateSearchConditions()
+        if len(environmentConditions) > 0:
+            bestDirection = self.runTowards(environmentConditions[1])
+            return api.makeMove(bestDirection, self.legalDirections)
 
         self.lastDirection = self.lastDirection if self.lastDirection in self.legalDirections else random.choice(self.legalDirections)
-        if len(self.legalDirections) > 1 and tuple(map(sum, zip(self.offsetDirectionalMapping[self.lastDirection], self.position))) == self.lastSpot:
-            self.legalDirections.remove(self.lastDirection)
-            self.lastDirection = random.choice(self.legalDirections)
         self.lastSpot = self.position
         return api.makeMove(self.lastDirection, self.legalDirections)
-
 
 class SurvivalAgent(Agent):
 
