@@ -1,6 +1,6 @@
 # Pacman Artificial Intelligence Agents
 
-This repository contains the coursework for Artificial Intelligence course. For code written by me, please refer to [sampleAgents.py](www.google.com) file.
+This repository contains the coursework for Artificial Intelligence course. For code written by me, please refer to [sampleAgents.py](https://github.com/Cinkupis/PacmanArtificialIntelligence/blob/master/sampleAgents.py) file.
 
   - GoLeftAgent
     - A pacman agent that whenever possible, tries to turn left. Has all of the information.
@@ -16,7 +16,7 @@ This repository contains the coursework for Artificial Intelligence course. For 
   - Requires Python 2.7 installed on your system
   - To run selected agent, type into the console:
     ```sh 
-     python pacman.py --pacman <Selected Agents class name>
+     python pacman.py --pacman <Selected Agents class name> -l mediumClassic
     ```
   - For a different maze layout:
     ```sh 
@@ -25,4 +25,46 @@ This repository contains the coursework for Artificial Intelligence course. For 
   - For a maze layout without ghosts:
     ```sh 
     python pacman.py --pacman <Selected Agents class name> --layout mediumClassicNoGhosts
+    ```
+  ---
+  - List of available layouts:
+    ```sh 
+    bigCorners
+    bigMaze
+    bigSafeSearch
+    bigSearch
+    boxSearch
+    capsuleClassic
+    contestClassic
+    contoursMaze
+    greedySearch
+    mediumClassic
+    mediumClassicNoGhosts
+    mediumCorners
+    mediumDottedMaze
+    mediumMaze
+    mediumSafeSearch
+    mediumScaryMaze
+    mediumSearch
+    minimaxClassic
+    oddSearch
+    openClassic
+    openMaze
+    openSearch
+    originalClassic
+    powerClassic
+    smallClassic
+    smallMaze
+    smallSafeSearch
+    smallSearch
+    testClassic
+    testMaze
+    testSearch
+    tinyCorners
+    tinyMaze
+    tinySafeSearch
+    tinySearch
+    trappedClassic
+    trickyClassic
+    trickySearch
     ```

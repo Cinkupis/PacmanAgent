@@ -36,6 +36,7 @@ import util
 sideLimit = 1
 hearingLimit = 2
 visibilityLimit = 5
+distanceLimit = 5
 
 def distanceLimited(objects, state):
     # When passed a list of objects, tests how far they are from
@@ -51,6 +52,16 @@ def distanceLimited(objects, state):
 
     return nearObjects
 
+def visibilityLimited(objects, state, limit):
+
+    pacman = state.getPacmanPosition()
+    nearObjects = []
+
+    for i in range(len(objects)):
+        if util.manhattanDistance(pacman, objects[i]) <= limit:
+            nearObjects.append(objects[i])
+
+    return nearObjects
 
 #
 # Sensing
@@ -330,13 +341,13 @@ def visible(objects, state):
         for i in range(len(objects)):
             if inFront(objects[i], facing, state):
                 visibleObjects.append(objects[i])
-        visibleObjects = distanceLimited(visibleObjects, state, visibilityLimit)
+        visibleObjects = visibilityLimited(visibleObjects, state, visibilityLimit)
 
         # Objects to the side. Visible up to "sideLimit"
         for i in range(len(objects)):
             if atSide(objects[i], facing, state):
                 sideObjects.append(objects[i])
-        sideObjects = distanceLimited(sideObjects, state, sideLimit)
+        sideObjects = visibilityLimited(sideObjects, state, sideLimit)
 
         # Combine lists.
         visibleObjects = visibleObjects + sideObjects
@@ -354,7 +365,7 @@ def visible(objects, state):
                 visibleObjects.append(objects[i])
             if inFront(objects[i], Directions.WEST, state):
                 visibleObjects.append(objects[i])
-        visibleObjects = distanceLimited(visibleObjects, state, visibilityLimit)
+        visibleObjects = visibilityLimited(visibleObjects, state, visibilityLimit)
 
     return visibleObjects
 
@@ -363,7 +374,7 @@ def audible(ghosts, state):
     # A ghost is audible if it is any direction and less than
     # "hearingLimit" away.
 
-    return distanceLimited(ghosts, state, hearingLimit)
+    return visibilityLimited(ghosts, state, hearingLimit)
 
 def union(a, b):
     # return the union of two lists
