@@ -4,8 +4,173 @@ import random
 import sys
 
 import api
+import nonDeterministicApi
 import util
 from game import Agent, Directions
+
+class NonDeterministicAgent(Agent):
+    def __init__(self):
+        """
+        Initialization of parameters
+        """
+        self.doOnce = True
+        self.lastDirection = Directions.STOP
+        self.lastSpot = None
+        self.position = None
+        self.walls = None
+        self.legalDirections = None
+        self.knownGhosts = None
+        self.knownWaypoints = []
+        self.visitedWaypoints = []
+        self.knownFood = None
+        self.offsetDirectionalMapping = None
+        self.oppositeOf = None
+        self.ranFromGhost = False
+        self.probabilityForward = 0.8
+        self.probabilitySideways = 0.1
+
+    def final(self, state):
+        """
+        Runs in between games.
+        Resets knowledge about the world to the starting point.
+        """
+        self.doOnce = True
+        self.lastDirection = Directions.STOP
+        self.lastSpot = None
+        self.position = None
+        self.walls = None
+        self.legalDirections = None
+        self.knownGhosts = None
+        self.knownWaypoints = []
+        self.visitedWaypoints = []
+        self.knownFood = None
+        self.offsetDirectionalMapping = None
+        self.oppositeOf = None
+        self.ranFromGhost = False
+        self.map = []
+        print "Did I win? I hope I did. Of course I did! I am confident in myself!"
+
+    def reEvaluateState(self):
+        for y in range(self.walls[-1][1] + 1):
+            for x in range(self.walls[-1][0] + 1):
+                if (x, y) in self.knownFood:
+                    self.map[x][y] = 5
+                    continue
+                if (x, y) not in self.knownFood and (x, y) not in self.walls:
+                    self.map[x][y] = -1
+                if (x, y) in self.knownGhosts:
+                    self.map[x][y] = -500
+        return self.maximumExpectedUtility()
+
+    def maximumExpectedUtility(self):
+        utilities = {}
+        for direction in self.legalDirections:
+            nextSpot = tuple(map(sum, zip(self.position, self.offsetDirectionalMapping[direction])))
+            utilities[direction] = self.probabilityForward * self.map[nextSpot[0]][nextSpot[1]]
+            if (Directions.LEFT[direction] in self.legalDirections):
+                nextSpot = tuple(map(sum, zip(self.position, self.offsetDirectionalMapping[Directions.LEFT[direction]])))
+                utilities[direction] += self.probabilitySideways * self.map[nextSpot[0]][nextSpot[1]]
+            else:
+                utilities[direction] += self.probabilitySideways * self.map[self.position[0]][self.position[1]]
+            if (Directions.RIGHT[direction] in self.legalDirections):
+                nextSpot = tuple(map(sum, zip(self.position, self.offsetDirectionalMapping[Directions.RIGHT[direction]])))
+                utilities[direction] += self.probabilitySideways * self.map[nextSpot[0]][nextSpot[1]]
+            else:
+                utilities[direction] += self.probabilitySideways * self.map[self.position[0]][self.position[1]]
+        bestDirection = max(utilities.iteritems(), key=operator.itemgetter(1))[0]
+        return bestDirection
+
+    def renewInformation(self, state):
+        """
+        Run at every tick.
+        Pacman updates its' knowledge about the world/environment
+        """
+        self.position = nonDeterministicApi.whereAmI(state)
+
+        self.legalDirections = nonDeterministicApi.legalActions(state)
+        if Directions.STOP in self.legalDirections:
+            self.legalDirections.remove(Directions.STOP)
+
+        self.knownGhosts = nonDeterministicApi.ghosts(state)
+        self.knownFood = nonDeterministicApi.food(state)
+
+        for waypoint in self.knownWaypoints:
+            if self.getManhattanDist(self.position, waypoint) == 0:
+                self.knownWaypoints.remove(waypoint)
+
+        if len(self.knownFood) > 0:
+            for i in range(len(self.knownFood)):
+                if self.knownFood[i] not in self.knownWaypoints:
+                    self.knownWaypoints.append(self.knownFood[i])
+
+    def instantiateNormalizeOnce(self, state):
+        """
+        Runs only once per pacman game.
+        Instantiates static information that is true at the time of environment creation and ever since that point.
+        Normalizes corner tuples into reachable spots (since api.corners(state) returns corners that are indeed walls.)
+        If, for whatever reason, the normalized corner coordinates are inside the array of known wall coordinates (meaning
+        maybe there is a double wall around the corner, or layout is not rectangular) then Pacman scraps such corners from
+        knownWaypoints array.
+        """
+        self.walls = nonDeterministicApi.walls(state)
+        self.knownWaypoints = nonDeterministicApi.corners(state)
+        self.offsetDirectionalMapping = {
+            Directions.WEST: (-1, 0),
+            Directions.NORTH: (0, 1),
+            Directions.EAST: (1, 0),
+            Directions.SOUTH: (0, -1)
+        }
+        self.oppositeOf = {
+            Directions.WEST: Directions.EAST,
+            Directions.NORTH: Directions.SOUTH,
+            Directions.EAST: Directions.WEST,
+            Directions.SOUTH: Directions.NORTH
+        }
+        for i in range(len(self.knownWaypoints)):
+            if self.knownWaypoints[i][0] == 0:
+                self.knownWaypoints[i] = (int(self.knownWaypoints[i][0] + 1), int(self.knownWaypoints[i][1]))
+            else:
+                self.knownWaypoints[i] = (int(self.knownWaypoints[i][0] - 1), int(self.knownWaypoints[i][1]))
+            if self.knownWaypoints[i][1] == 0:
+                self.knownWaypoints[i] = (int(self.knownWaypoints[i][0]), int(self.knownWaypoints[i][1] + 1))
+            else:
+                self.knownWaypoints[i] = (int(self.knownWaypoints[i][0]), int(self.knownWaypoints[i][1] - 1))
+
+        for corner in self.knownWaypoints:
+            if corner in self.walls:
+                self.knownWaypoints.remove(corner)
+
+        self.map = [[-1000 for y in range(self.walls[-1][1] + 1)] for x in range(self.walls[-1][0] + 1)]
+        self.doOnce = False
+
+    def getManhattanDist(self, objectA, objectB):
+        """
+        Returns manhattan distance between two coordinates (x, y)
+        :param objectA: A tuple of (x, y) coordinates
+        :param objectB: A tuple of (x, y) coordinates
+        :return: distance between objectA and objectB
+        """
+        return int(abs(objectA[0] - objectB[0]) + abs(objectA[1] - objectB[1]))
+
+    def getDiagonalDist(self, objectA, objectB):
+        """
+        Returns diagonal distance between two coordinates (x, y).
+        Utilizes Pythagorean theorem.
+        :param objectA: A tuple of (x, y) coordinates
+        :param objectB: A tuple of (x, y) coordinates
+        :return: distance between objectA and objectB
+        """
+        return math.sqrt((objectA[0] - objectB[0]) ** 2 + (objectA[1] - objectB[1]) ** 2)
+
+    def getAction(self, state):
+        # Once per game
+        if self.doOnce:
+            self.instantiateNormalizeOnce(state)
+
+        # updates information about its' environment
+        self.renewInformation(state)
+
+        return api.makeMove(self.reEvaluateState(), self.legalDirections)
 
 class PartialAgent(Agent):
     def __init__(self):
