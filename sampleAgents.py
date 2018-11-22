@@ -3,7 +3,7 @@ import operator
 import random
 import sys
 
-import api
+import deterministicApi as api
 import nonDeterministicApi
 import util
 from game import Agent, Directions
@@ -57,26 +57,63 @@ class NonDeterministicAgent(Agent):
                     self.map[x][y] = 5
                     continue
                 if (x, y) not in self.knownFood and (x, y) not in self.walls:
-                    self.map[x][y] = -1
+                    self.map[x][y] = 0
                 if (x, y) in self.knownGhosts:
                     self.map[x][y] = -500
+
+        self.runIterationsUntilConverge()
+
         return self.maximumExpectedUtility()
+
+    def runIterationsUntilConverge(self):
+        previousMap = self.map
+        start = True
+        print "NEXT"
+        #while abs(previousMap[self.knownWaypoints[0][0]][self.knownWaypoints[0][1]] - self.map[self.knownWaypoints[0][0]][self.knownWaypoints[0][1]]) >= 0.001 or start:
+        for i in range(5):
+        #while abs(previousMap[self.position[0]][self.position[1]] - self.map[self.position[0]][self.position[1]]) >= 0.01 or start:
+            start = False
+            previousMap = self.map
+            for y in range(self.walls[-1][1] + 1):
+                for x in range(self.walls[-1][0] + 1):
+                    maxSpot = (x, y)
+                    if maxSpot not in self.knownWaypoints and maxSpot not in self.knownFood and maxSpot not in self.walls and self.map[x][y] != 5:
+                        for direction in [Directions.NORTH, Directions.EAST, Directions.SOUTH, Directions.WEST]:
+                            nextSpot = tuple(map(sum, zip((x, y), self.offsetDirectionalMapping[direction])))
+                            if (nextSpot[0] < len(self.map)) and (nextSpot[1] < len(self.map[0])):
+                                utility = self.map[nextSpot[0]][nextSpot[1]] * self.probabilityForward
+                                if nextSpot not in self.walls:
+                                    sidewaysLeft = tuple(map(sum, zip((x, y), self.offsetDirectionalMapping[Directions.LEFT[direction]])))
+                                    if sidewaysLeft not in self.walls and sidewaysLeft[0] < len(self.map) and sidewaysLeft[1] < len(self.map[0]):
+                                        utility += self.map[sidewaysLeft[0]][sidewaysLeft[1]] * self.probabilitySideways
+                                    else:
+                                        utility += self.map[x][y] * self.probabilitySideways
+                                    sidewaysRight = tuple(map(sum, zip((x, y), self.offsetDirectionalMapping[Directions.RIGHT[direction]])))
+                                    if sidewaysRight not in self.walls and sidewaysRight[0] < len(self.map) and sidewaysRight[1] < len(self.map[0]):
+                                        utility += self.map[sidewaysRight[0]][sidewaysRight[1]] * self.probabilitySideways
+                                    else:
+                                        utility += self.map[x][y] * self.probabilitySideways
+                                    self.map[nextSpot[0]][nextSpot[1]] = utility
+                                    if self.map[nextSpot[0]][nextSpot[1]] > self.map[maxSpot[0]][maxSpot[1]]:
+                                        maxSpot = nextSpot
+                        self.map[x][y] = -1 + self.map[maxSpot[0]][maxSpot[1]]
+            #if abs(previousMap[self.position[0]][self.position[1]] - self.map[self.position[0]][self.position[1]]) >= 0.01:
+            #    break;
+            self.printMap()
+            print "--------------------------------------------------------------------------------------"
+
+    def printMap(self):
+        for y in range(self.walls[-1][1] + 1):
+            for x in range(self.walls[-1][0] + 1):
+                print self.map[x][y],
+                print "|",
+            print
 
     def maximumExpectedUtility(self):
         utilities = {}
         for direction in self.legalDirections:
             nextSpot = tuple(map(sum, zip(self.position, self.offsetDirectionalMapping[direction])))
-            utilities[direction] = self.probabilityForward * self.map[nextSpot[0]][nextSpot[1]]
-            if (Directions.LEFT[direction] in self.legalDirections):
-                nextSpot = tuple(map(sum, zip(self.position, self.offsetDirectionalMapping[Directions.LEFT[direction]])))
-                utilities[direction] += self.probabilitySideways * self.map[nextSpot[0]][nextSpot[1]]
-            else:
-                utilities[direction] += self.probabilitySideways * self.map[self.position[0]][self.position[1]]
-            if (Directions.RIGHT[direction] in self.legalDirections):
-                nextSpot = tuple(map(sum, zip(self.position, self.offsetDirectionalMapping[Directions.RIGHT[direction]])))
-                utilities[direction] += self.probabilitySideways * self.map[nextSpot[0]][nextSpot[1]]
-            else:
-                utilities[direction] += self.probabilitySideways * self.map[self.position[0]][self.position[1]]
+            utilities[direction] = self.map[nextSpot[0]][nextSpot[1]]
         bestDirection = max(utilities.iteritems(), key=operator.itemgetter(1))[0]
         return bestDirection
 
@@ -163,12 +200,11 @@ class NonDeterministicAgent(Agent):
         return math.sqrt((objectA[0] - objectB[0]) ** 2 + (objectA[1] - objectB[1]) ** 2)
 
     def getAction(self, state):
+        # updates information about its' environment
+        self.renewInformation(state)
         # Once per game
         if self.doOnce:
             self.instantiateNormalizeOnce(state)
-
-        # updates information about its' environment
-        self.renewInformation(state)
 
         return api.makeMove(self.reEvaluateState(), self.legalDirections)
 
