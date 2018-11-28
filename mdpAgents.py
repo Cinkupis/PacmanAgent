@@ -1,29 +1,28 @@
 import operator
 import sys
-import util
+import math
 
 import api
 from game import Agent, Directions
 
-REWARD_CAPSULE = 0.5
-REWARD_FOOD = 0.5
+REWARD_CAPSULE = 2
+REWARD_FOOD = 1
 REWARD_STANDARD = -0.5
-REWARD_GHOST = -10
+REWARD_GHOST = -2
 
-PROBABILITY_FORWARDS = 0.8
-PROBABILITY_SIDEWAYS = 0.1
+PROBABILITY_FORWARDS = api.directionProb
+PROBABILITY_SIDEWAYS = (1 - api.directionProb) / 2
 
-CONVERGENCE_THRESHOLD = 0
-GAMMA = 0.95
+CONVERGENCE_THRESHOLD = 0.1
+GAMMA = 0.9
 
-class NonDeterministicAgent(Agent):
+class MDPAgent(Agent):
 
     def __init__(self):
         """
         Initialization of parameters
         """
         self.doOnce = True
-        self.capsuleEaten = False
         self.position = None
         self.walls = None
         self.legalDirections = None
@@ -36,16 +35,18 @@ class NonDeterministicAgent(Agent):
         self.previousMap = []
         self.currentMap = []
         self.sumOfAllUtilities = 0
+        self.mapHeight = 0
+        self.mapWidth = 0
 
     def initializeMap(self):
-        for y in range(self.walls[-1][1] + 1):
-            for x in range(self.walls[-1][0] + 1):
+        for y in range(self.mapHeight):
+            for x in range(self.mapWidth):
                 spot = (x, y)
-                if spot not in self.walls:
+                if self.notWall(spot):
                     self.previousMap[x][y] = 0
         self.currentMap = self.previousMap
 
-    def isSpotEmpty(self, spot):
+    def notWall(self, spot):
         return spot not in self.walls
 
     def addTuples(self, thisTuple, direction):
@@ -54,42 +55,52 @@ class NonDeterministicAgent(Agent):
     def reward(self, spot):
         distance = 1000
         indexOfClosestGhost = None
+        rewards = REWARD_STANDARD
         for ghost in self.knownGhosts:
-            if distance > util.manhattanDistance(spot, ghost):
-                distance = util.manhattanDistance(spot, ghost)
+            if distance > self.getDiagonalDist(spot, ghost):
+                distance = self.getDiagonalDist(spot, ghost)
                 indexOfClosestGhost = self.knownGhosts.index(ghost)
                 if distance == 0:
                     distance = 1
 
-        if indexOfClosestGhost != None and self.knownGhostsWithTimer[indexOfClosestGhost][1] > 0 and distance <= 2:
-            return REWARD_STANDARD
-        if distance < 3:
-            return REWARD_GHOST / distance
+        if self.knownGhostsWithTimer[indexOfClosestGhost][1] < 5 and distance < 5:
+            rewards += REWARD_GHOST / distance
+        if spot in self.knownGhosts:
+            rewards += REWARD_GHOST
         if spot in self.knownCapsules:
-            return REWARD_CAPSULE
+            rewards += REWARD_CAPSULE
         if spot in self.knownFood:
-            return REWARD_FOOD
-        return REWARD_STANDARD
+            rewards += REWARD_FOOD
+        return rewards
 
+    def getDiagonalDist(self, objectA, objectB):
+        """
+        Returns diagonal distance between two coordinates (x, y).
+        Utilizes Pythagorean theorem.
+        :param objectA: A tuple of (x, y) coordinates
+        :param objectB: A tuple of (x, y) coordinates
+        :return: distance between objectA and objectB
+        """
+        return math.sqrt((objectA[0] - objectB[0]) ** 2 + (objectA[1] - objectB[1]) ** 2)
 
     def calculateUtilityForwads(self, currentSpot, direction):
-        forwadsSpot = self.addTuples(currentSpot, direction)
-        if forwadsSpot in self.walls:
+        forwardSpot = self.addTuples(currentSpot, direction)
+        if self.notWall(forwardSpot):
+            x = forwardSpot[0]
+            y = forwardSpot[1]
+        else:
             x = currentSpot[0]
             y = currentSpot[1]
-        else:
-            x = forwadsSpot[0]
-            y = forwadsSpot[1]
         return PROBABILITY_FORWARDS * self.previousMap[x][y]
 
     def calculateUtilitySideways(self, currentSpot, direction):
         sidewaysSpot = self.addTuples(currentSpot, direction)
-        if sidewaysSpot in self.walls:
-            x = currentSpot[0]
-            y = currentSpot[1]
-        else:
+        if self.notWall(sidewaysSpot):
             x = sidewaysSpot[0]
             y = sidewaysSpot[1]
+        else:
+            x = currentSpot[0]
+            y = currentSpot[1]
         return PROBABILITY_SIDEWAYS * self.previousMap[x][y]
 
     def calculateUtility(self, currentSpot):
@@ -108,13 +119,13 @@ class NonDeterministicAgent(Agent):
             utility += self.calculateUtilitySideways(currentSpot, Directions.RIGHT[direction])
             if utility > maxUtility:
                 maxUtility = utility
-        self.currentMap[x][y] = GAMMA * maxUtility + self.reward(currentSpot)
+        self.currentMap[x][y] = round(GAMMA * maxUtility + self.reward(currentSpot), 3)
 
     def iterateOnce(self):
-        for y in range(1, self.walls[-1][1]):
-            for x in range(1, self.walls[-1][0]):
+        for y in range(1, self.mapHeight - 1):
+            for x in range(1, self.mapWidth - 1):
                 currentSpot = (x, y)
-                if self.isSpotEmpty(currentSpot):
+                if self.notWall(currentSpot):
                     self.calculateUtility(currentSpot)
                 else:
                     self.currentMap[x][y] = self.previousMap[x][y]
@@ -128,20 +139,6 @@ class NonDeterministicAgent(Agent):
             self.previousMap = self.currentMap
             if abs(abs(previousSumOfAllUtilities) - abs(self.sumOfAllUtilities)) <= CONVERGENCE_THRESHOLD:
                 break
-
-    def printMap(self):
-        for y in range(self.walls[-1][1] + 1):
-            for x in range(self.walls[-1][0] + 1):
-                if self.currentMap[x][y] == -1000:
-                    print self.currentMap[x][y],
-                elif self.currentMap[x][y] == 5:
-                    print("%.3f" % self.currentMap[x][y]),
-                elif self.currentMap[x][y] == -500:
-                    print self.currentMap[x][y],
-                else:
-                    print("%.2f" % self.currentMap[x][y]),
-                print "|",
-            print
 
     def maximumExpectedUtility(self):
         utilities = {}
@@ -188,14 +185,17 @@ class NonDeterministicAgent(Agent):
             Directions.SOUTH: Directions.NORTH
         }
 
+        self.mapWidth = self.walls[-1][0] + 1
+        self.mapHeight = self.walls[-1][1] + 1
         # Python doesn't have a simple initialization of 2D arrays like, for example, in Java 'int var = new int[][];'
         # So we have to resolve to fancy one liners to do the trick.
         # In this case we initialize every single square of the map to -1000. This value indicates there is a wall.
         # Later on, we adjust the values for squares that aren't exactly walls.
         self.previousMap = [[-1000 if (x, y) in self.walls
                              else 0
-                             for y in range(self.walls[-1][1] + 1)]
-                            for x in range(self.walls[-1][0] + 1)]
+                             for y in range(self.mapHeight)]
+                            for x in range(self.mapWidth)]
+        self.currentMap = self.previousMap
         self.doOnce = False
 
     def getAction(self, state):
@@ -209,9 +209,6 @@ class NonDeterministicAgent(Agent):
         self.runIterationsUntilConverge()
         bestDirection = self.maximumExpectedUtility()
 
-        # self.printMap()
-        # print "-----------------------------------------------------------"
-
         return api.makeMove(bestDirection, self.legalDirections)
 
     def final(self, state):
@@ -220,7 +217,6 @@ class NonDeterministicAgent(Agent):
         Resets knowledge about the world to the starting point.
         """
         self.doOnce = True
-        self.capsuleEaten = False
         self.position = None
         self.walls = None
         self.legalDirections = None
