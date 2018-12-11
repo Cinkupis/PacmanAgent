@@ -1,7 +1,7 @@
 # api.py
 # parsons/15-nov-2017
 #
-# Version 5
+# Version 6
 #
 # With acknowledgements to Jiaming Ke, who was the first to report the
 # bug in corners and to spot the bug in the motion model.
@@ -31,8 +31,9 @@
 # the PacMan AI projects.
 
 from random import random
-from pacman import Directions
+
 import util
+from pacman import Directions
 
 #
 # Parameters
@@ -74,7 +75,7 @@ def legalActions(state):
     #
     # Just pulls this data out of the state. Function included so that
     # all interactions are through this API.
-    
+
     return state.getLegalPacmanActions()
 
 def ghosts(state):
@@ -83,8 +84,8 @@ def ghosts(state):
     # This version just returns the ghost positions from the state data
     # In later versions this will be more restricted, and include some
     # uncertainty.
-            
-    return union(visible(state.getGhostPositions(),state), audible(state.getGhostPositions(),state))
+
+    return state.getGhostPositions()
 
 def ghostStates(state):
     # Returns the position of the ghsosts, plus an indication of
@@ -96,7 +97,7 @@ def ghostStates(state):
     #
     # where "state" is 1 if the relevant ghost is scared/edible, and 0
     # otherwise.
-    
+
     ghostStateInfo = state.getGhostStates()
     ghostStates = []
     for s in ghostStateInfo:
@@ -110,7 +111,7 @@ def ghostStatesWithTimes(state):
     # Just as ghostStates(), but when the ghost is in scared/edible
     # mode, "state" is a time value (how much longer the ghost will
     # remain scared/edible) rather than 1.
-    
+
     ghostStateInfo = state.getGhostStates()
     ghostStates = []
     for s in ghostStateInfo:
@@ -132,8 +133,8 @@ def capsules(state):
     # 2) Pacman is not moving, and the capsule is within the visibilityLimit.
     #
     # In both cases, walls block the view.
-    
-    return visible(state.getCapsules(), state)
+
+    return state.getCapsules()
 
 def food(state):
     # Returns a list of (x, y) pairs of food positions
@@ -150,7 +151,7 @@ def food(state):
     # 2) Pacman is not moving, and the food is within the visibilityLimit.
     #
     # In both cases, walls block the view.
-    
+
     foodList= []
     foodGrid = state.getFood()
     width = foodGrid.width
@@ -159,9 +160,9 @@ def food(state):
         for j in range(height):
             if foodGrid[i][j] == True:
                 foodList.append((i, j))
-            
+
     # Return list of food that is visible
-    return visible(foodList, state)
+    return foodList
 
 def walls(state):
     # Returns a list of (x, y) pairs of wall positions
@@ -169,7 +170,7 @@ def walls(state):
     # This version just returns all the current wall locations
     # extracted from the state data.  In later versions, this will be
     # restricted by distance, and include some uncertainty.
-    
+
     wallList= []
     wallGrid = state.getWalls()
     width = wallGrid.width
@@ -177,7 +178,7 @@ def walls(state):
     for i in range(width):
         for j in range(height):
             if wallGrid[i][j] == True:
-                wallList.append((i, j))            
+                wallList.append((i, j))
     return wallList
 
 def corners(state):
@@ -194,7 +195,7 @@ def corners(state):
     corners.append((0, height-1))
     corners.append((width-1, height-1))
     return corners
-                
+
 #
 # Acting
 #
@@ -214,7 +215,7 @@ def makeMove(direction, legal):
     # deciding what Pacman does:
     if direction == Directions.STOP:
         return direction
-    
+
     if nonDeterministic:
         # Sample in the usual way to make Pacman move in the specified
         # direction with probability directionProb.
@@ -250,7 +251,7 @@ def distanceLimited(objects, state, limit):
 
     pacman = state.getPacmanPosition()
     nearObjects = []
-    
+
     for i in range(len(objects)):
         if util.manhattanDistance(pacman,objects[i]) <= limit:
             nearObjects.append(objects[i])
@@ -261,7 +262,7 @@ def inFront(object, facing, state):
     # Returns true if the object is along the corridor in the
     # direction of the parameter "facing" before a wall gets in the
     # way.
-    
+
     pacman = state.getPacmanPosition()
     pacman_x = pacman[0]
     pacman_y = pacman[1]
@@ -302,7 +303,7 @@ def inFront(object, facing, state):
             else:
                 next = (next[0] + 1, pacman_y)
         return False
-    
+
     # If Pacman is facing West
     if facing == Directions.WEST:
         # Check if the object is anywhere due West of Pacman before a
@@ -318,7 +319,7 @@ def inFront(object, facing, state):
 def atSide(object, facing, state):
     # Returns true if the object is in a side corridor perpendicular
     # to the direction that Pacman is travelling.
-    
+
     pacman = state.getPacmanPosition()
 
     # If Pacman is facing North or Sout, then objects to the side are to the
@@ -326,89 +327,88 @@ def atSide(object, facing, state):
     #
     # These are objects that Pacman would see if it were facing East
     # or West.
-    
+
     if facing == Directions.NORTH or facing == Directions.SOUTH:
         # Check if the object is anywhere due North of Pacman before a
         # wall intervenes.
-       if inFront(object, Directions.WEST, state) or inFront(object, Directions.EAST, state):
-                return True
-       else:
-                return False
-            
+        if inFront(object, Directions.WEST, state) or inFront(object, Directions.EAST, state):
+            return True
+        else:
+            return False
+
     # Similarly for other directions
     if facing == Directions.WEST or facing == Directions.EAST:
         # Check if the object is anywhere due North of Pacman before a
         # wall intervenes.
-       if inFront(object, Directions.NORTH, state) or inFront(object, Directions.SOUTH, state):
-                return True
-       else:
-                return False
+        if inFront(object, Directions.NORTH, state) or inFront(object, Directions.SOUTH, state):
+            return True
+        else:
+            return False
 
     else:
         return False
-    
+
 def visible(objects, state):
     # When passed a list of objects, returns those that are visible to
     # Pacman.
 
+    # If partialVisibility is False, then everything is visible
+    if not partialVisibility:
+        return objects
+
     # This code creates partial observability by only returning some
     # of the members of objects.
-    facing = state.getPacmanState().configuration.direction
-    visibleObjects = []
-    sideObjects = []
-    
-    if facing != Directions.STOP:
-    
-        # If Pacman is moving, visible objects are those in front of,
-        # and to the side (if there are any side corridors).
-
-        # Objects in front. Visible up to "visibilityLimit"
-        for i in range(len(objects)):
-            if inFront(objects[i], facing, state):
-                visibleObjects.append(objects[i])
-        visibleObjects = distanceLimited(visibleObjects, state, visibilityLimit)
-        
-        # Objects to the side. Visible up to "sideLimit"
-        for i in range(len(objects)):
-            if atSide(objects[i], facing, state):
-                sideObjects.append(objects[i])
-        sideObjects = distanceLimited(sideObjects, state, sideLimit)
-
-        # Combine lists.
-        visibleObjects = visibleObjects + sideObjects
-        
     else:
+        facing = state.getPacmanState().configuration.direction
+        visibleObjects = []
+        sideObjects = []
 
-        # If Pacman is not moving, they can see in all directions.
-        #
-        # Unfortunately facing will never have value Directions.STOP
-        # after the first move is made, so this code will not run
-        # after the first move :-(
+        if facing != Directions.STOP:
 
-        for i in range(len(objects)):
-            if inFront(objects[i], Directions.NORTH, state):
-                visibleObjects.append(objects[i])
-            if inFront(objects[i], Directions.SOUTH, state):
-                visibleObjects.append(objects[i])
-            if inFront(objects[i], Directions.EAST, state):
-                visibleObjects.append(objects[i])
-            if inFront(objects[i], Directions.WEST, state):
-                visibleObjects.append(objects[i])
-        visibleObjects = distanceLimited(visibleObjects, state, visibilityLimit)
+            # If Pacman is moving, visible objects are those in front of,
+            # and to the side (if there are any side corridors).
 
-    # If we return visibleObjects, we have partial observability. If
-    # we return objects, then we have full observability.
-    if partialVisibility:
+            # Objects in front. Visible up to "visibilityLimit"
+            for i in range(len(objects)):
+                if inFront(objects[i], facing, state):
+                    visibleObjects.append(objects[i])
+            visibleObjects = distanceLimited(visibleObjects, state, visibilityLimit)
+
+            # Objects to the side. Visible up to "sideLimit"
+            for i in range(len(objects)):
+                if atSide(objects[i], facing, state):
+                    sideObjects.append(objects[i])
+            sideObjects = distanceLimited(sideObjects, state, sideLimit)
+
+            # Combine lists.
+            visibleObjects = visibleObjects + sideObjects
+
+        else:
+
+            # If Pacman is not moving, they can see in all directions.
+            #
+            # Unfortunately facing will never have value Directions.STOP
+            # after the first move is made, so this code will not run
+            # after the first move :-(
+
+            for i in range(len(objects)):
+                if inFront(objects[i], Directions.NORTH, state):
+                    visibleObjects.append(objects[i])
+                if inFront(objects[i], Directions.SOUTH, state):
+                    visibleObjects.append(objects[i])
+                if inFront(objects[i], Directions.EAST, state):
+                    visibleObjects.append(objects[i])
+                if inFront(objects[i], Directions.WEST, state):
+                    visibleObjects.append(objects[i])
+            visibleObjects = distanceLimited(visibleObjects, state, visibilityLimit)
         return visibleObjects
-    else:
-        return objects
 
 def audible(ghosts, state):
     # A ghost is audible if it is any direction and less than
     # "hearingLimit" away.
 
-    return distanceLimited(ghosts, state, hearingLimit)  
-    
+    return distanceLimited(ghosts, state, hearingLimit)
+
 def union(a, b):
     # return the union of two lists 
     #
@@ -437,9 +437,9 @@ def selectNewMove(direction, legal):
             else:
                 return Directions.STOP
         else:
-              if Directions.EAST in legal:
+            if Directions.EAST in legal:
                 return Directions.EAST
-              else:
+            else:
                 return Directions.STOP
 
     # If chosen direction is EAST
@@ -450,9 +450,9 @@ def selectNewMove(direction, legal):
             else:
                 return Directions.STOP
         else:
-              if Directions.SOUTH in legal:
+            if Directions.SOUTH in legal:
                 return Directions.SOUTH
-              else:
+            else:
                 return Directions.STOP
 
     # If chosen direction is SOUTH
@@ -463,11 +463,11 @@ def selectNewMove(direction, legal):
             else:
                 return Directions.STOP
         else:
-              if Directions.WEST in legal:
+            if Directions.WEST in legal:
                 return Directions.WEST
-              else:
+            else:
                 return Directions.STOP
-  
+
     # If chosen direction is WEST
     if direction == Directions.WEST:
         if left:
@@ -476,9 +476,9 @@ def selectNewMove(direction, legal):
             else:
                 return Directions.STOP
         else:
-              if Directions.NORTH in legal:
+            if Directions.NORTH in legal:
                 return Directions.NORTH
-              else:
+            else:
                 return Directions.STOP
 
     print "Why am I here?"
